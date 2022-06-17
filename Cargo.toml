@@ -1,0 +1,26 @@
+[package]
+name = "captcha-jwt-auth"
+version = "0.1.0"
+authors = ["Jacopo Maroli <info@jacopomaroli.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = "4"
+aes = "0.8.1"
+captcha = "0.0.9"
+jwt = "0.16.0"
+anyhow = "1.0"
+# rand = "0.8.5"
+rand = "0.3.0"
+rust-crypto = "0.2.36"
+rustc-serialize = "0.3.24"
+chacha20poly1305 = { version = "0.9.0", features = ["stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+base64 = "0.13.0"
+generic-array = "0.14.5"
+jsonwebtoken = "8.1.0"
+chrono = "0.4.19"
