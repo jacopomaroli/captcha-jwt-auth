@@ -350,6 +350,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "captcha-jwt-auth"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "aes",
+ "anyhow",
+ "base64",
+ "captcha",
+ "chacha20poly1305",
+ "chrono",
+ "futures",
+ "generic-array",
+ "jsonwebtoken",
+ "jwt",
+ "rand 0.3.23",
+ "rust-crypto",
+ "rustc-serialize",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -848,28 +871,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
-]
-
-[[package]]
-name = "jwt-auth"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "aes",
- "anyhow",
- "base64",
- "captcha",
- "chacha20poly1305",
- "chrono",
- "futures",
- "generic-array",
- "jsonwebtoken",
- "jwt",
- "rand 0.3.23",
- "rust-crypto",
- "rustc-serialize",
- "serde",
- "serde_json",
 ]
 
 [[package]]

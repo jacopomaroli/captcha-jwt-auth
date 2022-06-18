@@ -1,12 +1,22 @@
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation, errors};
-use serde::{Deserialize, Serialize};
+use crate::error::CJAError;
 use chrono::prelude::*;
+use jsonwebtoken::{
+    decode, encode, errors, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
+};
+use serde::{Deserialize, Serialize};
 
 const JWT_SECRET: &[u8] = b"secret";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Claims {
     exp: usize,
+}
+
+fn map_error(jwt_err: &errors::Error) -> CJAError {
+    match *jwt_err.kind() {
+        errors::ErrorKind::ExpiredSignature => CJAError::JWTExpired,
+        _ => CJAError::Forbidden,
+    }
 }
 
 pub fn create_jwt() -> errors::Result<String> {
@@ -22,11 +32,12 @@ pub fn create_jwt() -> errors::Result<String> {
     encode(&header, &claims, &EncodingKey::from_secret(JWT_SECRET))
 }
 
-pub fn validate(jwt: &String) -> Claims {
+pub fn validate(jwt: &String) -> Result<TokenData<Claims>, CJAError> {
     let token_data = decode::<Claims>(
         &jwt,
         &DecodingKey::from_secret(JWT_SECRET),
         &Validation::new(Algorithm::HS512),
-    ).unwrap();
-    token_data.claims
+    )
+    .map_err(|e| map_error(&e));
+    token_data
 }

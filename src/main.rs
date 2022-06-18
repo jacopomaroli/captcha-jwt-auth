@@ -4,46 +4,47 @@ use chacha20poly1305::{
 };
 use generic_array::GenericArray;
 
-use base64::{encode, decode};
+use base64::{decode, encode};
 
 // use std::iter::repeat;
 // use rand::{OsRng};
 
-use actix_web::{get, post, web, App, HttpServer, Responder, HttpResponse, Error};
-use actix_web::http::{StatusCode};
+use actix_web::http::StatusCode;
 use actix_web::web::Bytes;
-use serde::{Deserialize, Serialize};
+use actix_web::{get, post, web, App, Error, HttpResponse, HttpServer, Responder};
+use captcha::filters::{Dots, Noise, Wave};
 use captcha::Captcha;
-use captcha::filters::{Noise, Wave, Dots};
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod auth;
+mod error;
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct PostSessionReq {
     sessionData: String,
-    solution: String
+    solution: String,
 }
 
 #[derive(Serialize, Deserialize)]
 struct PostSessionRes {
-    jwt: String
+    jwt: String,
 }
 
 #[derive(Serialize, Deserialize)]
 struct CaptchaSessionData {
     exp: u64,
-    solution: String
+    solution: String,
 }
 
 #[derive(Serialize, Deserialize)]
 struct PostValidateReq {
-    jwt: String
+    jwt: String,
 }
 
 #[get("/captcha")]
-async fn get_captcha_handler() -> Result<HttpResponse, Error> {
+async fn get_captcha_handler() -> Result<HttpResponse, error::CJAError> {
     let captcha_data = Captcha::new()
         .add_chars(5)
         .apply_filter(Noise::new(0.4))
@@ -66,18 +67,20 @@ async fn get_captcha_handler() -> Result<HttpResponse, Error> {
     // let mut nonce = [0u8; 24];
     // gen.fill_bytes(&mut key);
     // gen.fill_bytes(&mut nonce);
-    
+
     let key = decode("MOPO8/pr8f7tXkFI+2X4Ea+M6+F7FD8Y4PGXdKMcRbI=").unwrap();
     let nonce = decode("pxuKaq8bI9/OQrdX9Y9+7Iv09kztwkox").unwrap();
-    
+
     let exp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
-        .as_secs() + (5 * 60);
+        .as_secs()
+        + (5 * 60);
     let secret = serde_json::to_string(&CaptchaSessionData {
         exp: exp,
-        solution: solution
-    }).unwrap();
+        solution: solution,
+    })
+    .unwrap();
 
     let cipher = XChaCha20Poly1305::new(&GenericArray::clone_from_slice(&key));
 
@@ -92,7 +95,9 @@ async fn get_captcha_handler() -> Result<HttpResponse, Error> {
 }
 
 #[post("/session")]
-async fn post_session_handler(post_session_req: web::Json<PostSessionReq>) -> impl Responder {
+async fn post_session_handler(
+    post_session_req: web::Json<PostSessionReq>,
+) -> Result<HttpResponse, error::CJAError> {
     format!("Solution: {}", post_session_req.solution);
 
     let key = decode("MOPO8/pr8f7tXkFI+2X4Ea+M6+F7FD8Y4PGXdKMcRbI=").unwrap();
@@ -100,45 +105,48 @@ async fn post_session_handler(post_session_req: web::Json<PostSessionReq>) -> im
     let cipher = XChaCha20Poly1305::new(&GenericArray::clone_from_slice(&key));
 
     let encrypted_data_2 = decode(&post_session_req.sessionData);
-    let decrypted_data = cipher.decrypt(&GenericArray::clone_from_slice(&nonce), encrypted_data_2.unwrap().as_ref());
+    let decrypted_data = cipher.decrypt(
+        &GenericArray::clone_from_slice(&nonce),
+        encrypted_data_2.unwrap().as_ref(),
+    );
     let session_data_str = String::from_utf8(decrypted_data.unwrap()).unwrap();
     println!("decrypted data {}", session_data_str);
     let session_data = serde_json::from_str::<CaptchaSessionData>(&session_data_str).unwrap();
+
+    if post_session_req.solution != session_data.solution {
+        return Err(error::CJAError::CaptchaInvalid);
+    }
 
     let exp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
 
-    if post_session_req.solution != session_data.solution ||
-       session_data.exp < exp
-    {
-        println!("error");
-        return HttpResponse::Unauthorized().body({});
+    if session_data.exp < exp {
+        return Err(error::CJAError::CaptchaExpired);
     }
 
     let token = auth::create_jwt().unwrap();
-        //.map_err(|e| reject::custom(e))?;
+    //.map_err(|e| reject::custom(e))?;
 
-    let body = serde_json::to_string(&PostSessionRes {
-        jwt: token
-    })
-    .unwrap();
+    let body = serde_json::to_string(&PostSessionRes { jwt: token }).unwrap();
 
-    HttpResponse::Ok()
+    Ok(HttpResponse::Ok()
         .content_type("application/json")
-        .body(body)
+        .body(body))
 }
 
 #[post("/validate")]
-async fn post_validate_handler(post_validate_req: web::Json<PostValidateReq>) -> impl Responder {
-    let claims = auth::validate(&post_validate_req.jwt);
+async fn post_validate_handler(
+    post_validate_req: web::Json<PostValidateReq>,
+) -> Result<HttpResponse, error::CJAError> {
+    let token_data = auth::validate(&post_validate_req.jwt).map_err(|e| return e)?;
 
-    let body = serde_json::to_string(&claims).unwrap();
+    let body = serde_json::to_string(&token_data.claims).unwrap();
 
-    HttpResponse::Ok()
+    Ok(HttpResponse::Ok()
         .content_type("application/json")
-        .body(body)
+        .body(body))
 }
 
 #[actix_web::main] // or #[tokio::main]
