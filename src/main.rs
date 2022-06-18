@@ -10,15 +10,28 @@ use base64::{decode, encode};
 // use rand::{OsRng};
 
 use actix_web::http::StatusCode;
-use actix_web::web::Bytes;
-use actix_web::{get, post, web, App, Error, HttpResponse, HttpServer, Responder};
+use actix_web::web::{Bytes, Data};
+use actix_web::{get, post, web, App, HttpResponse, HttpServer};
 use captcha::filters::{Dots, Noise, Wave};
 use captcha::Captcha;
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod auth;
 mod error;
+
+#[derive(Deserialize, Debug)]
+struct Config {
+    jwt_secret: String,
+    captcha_key: String,
+    captcha_nonce: String,
+}
+
+struct State {
+    config: Config,
+}
 
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
@@ -44,7 +57,7 @@ struct PostValidateReq {
 }
 
 #[get("/captcha")]
-async fn get_captcha_handler() -> Result<HttpResponse, error::CJAError> {
+async fn get_captcha_handler(state: Data<Arc<State>>) -> Result<HttpResponse, error::CJAError> {
     let captcha_data = Captcha::new()
         .add_chars(5)
         .apply_filter(Noise::new(0.4))
@@ -68,8 +81,8 @@ async fn get_captcha_handler() -> Result<HttpResponse, error::CJAError> {
     // gen.fill_bytes(&mut key);
     // gen.fill_bytes(&mut nonce);
 
-    let key = decode("MOPO8/pr8f7tXkFI+2X4Ea+M6+F7FD8Y4PGXdKMcRbI=").unwrap();
-    let nonce = decode("pxuKaq8bI9/OQrdX9Y9+7Iv09kztwkox").unwrap();
+    let key = decode(&state.config.captcha_key).unwrap();
+    let nonce = decode(&state.config.captcha_nonce).unwrap();
 
     let exp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -96,12 +109,11 @@ async fn get_captcha_handler() -> Result<HttpResponse, error::CJAError> {
 
 #[post("/session")]
 async fn post_session_handler(
+    state: Data<Arc<State>>,
     post_session_req: web::Json<PostSessionReq>,
 ) -> Result<HttpResponse, error::CJAError> {
-    format!("Solution: {}", post_session_req.solution);
-
-    let key = decode("MOPO8/pr8f7tXkFI+2X4Ea+M6+F7FD8Y4PGXdKMcRbI=").unwrap();
-    let nonce = decode("pxuKaq8bI9/OQrdX9Y9+7Iv09kztwkox").unwrap();
+    let key = decode(&state.config.captcha_key).unwrap();
+    let nonce = decode(&state.config.captcha_nonce).unwrap();
     let cipher = XChaCha20Poly1305::new(&GenericArray::clone_from_slice(&key));
 
     let encrypted_data_2 = decode(&post_session_req.sessionData);
@@ -126,7 +138,8 @@ async fn post_session_handler(
         return Err(error::CJAError::CaptchaExpired);
     }
 
-    let token = auth::create_jwt().unwrap();
+    let jwt_secret: &[u8] = &state.config.jwt_secret.as_bytes();
+    let token = auth::create_jwt(jwt_secret).unwrap();
     //.map_err(|e| reject::custom(e))?;
 
     let body = serde_json::to_string(&PostSessionRes { jwt: token }).unwrap();
@@ -138,9 +151,11 @@ async fn post_session_handler(
 
 #[post("/validate")]
 async fn post_validate_handler(
+    state: Data<Arc<State>>,
     post_validate_req: web::Json<PostValidateReq>,
 ) -> Result<HttpResponse, error::CJAError> {
-    let token_data = auth::validate(&post_validate_req.jwt).map_err(|e| return e)?;
+    let jwt_secret: &[u8] = &state.config.jwt_secret.as_bytes();
+    let token_data = auth::validate(jwt_secret, &post_validate_req.jwt).map_err(|e| return e)?;
 
     let body = serde_json::to_string(&token_data.claims).unwrap();
 
@@ -149,15 +164,29 @@ async fn post_validate_handler(
         .body(body))
 }
 
+fn get_config() -> Config {
+    dotenv().ok();
+    match envy::prefixed("CJA_").from_env::<Config>() {
+        Ok(config) => {
+            println!("{:#?}", config);
+            config
+        }
+        Err(error) => panic!("{:#?}", error),
+    }
+}
+
 #[actix_web::main] // or #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
+    let config = get_config();
+    let state = Data::new(Arc::new(State { config }));
+    HttpServer::new(move || {
         App::new()
+            .app_data(state.clone())
             .service(get_captcha_handler)
             .service(post_session_handler)
             .service(post_validate_handler)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 3000))?
     .run()
     .await
 }
