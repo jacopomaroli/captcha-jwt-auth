@@ -1,14 +1,14 @@
 FROM rust:1.61.0 as builder
 
-RUN USER=root cargo new --bin rust-docker-web
-WORKDIR ./rust-docker-web
+RUN USER=root cargo new --bin captcha-jwt-auth
+WORKDIR ./captcha-jwt-auth
 COPY ./Cargo.toml ./Cargo.toml
 RUN cargo build --release
 RUN rm src/*.rs
 
 ADD . ./
 
-RUN rm ./target/release/deps/rust_docker_web*
+RUN rm ./target/release/deps/captcha_jwt_auth*
 RUN cargo build --release
 
 
