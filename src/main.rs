@@ -1,29 +1,39 @@
-use chacha20poly1305::{
-    aead::{Aead, NewAead},
-    XChaCha20Poly1305,
-};
-use generic_array::GenericArray;
-
-use base64::{decode, encode};
-
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 // use std::iter::repeat;
 // use rand::{OsRng};
+
+use base64::{decode, encode};
+use generic_array::GenericArray;
+use serde::{Deserialize, Serialize};
+
+use dotenv::dotenv;
 
 use actix_web::http::StatusCode;
 use actix_web::web::{Bytes, Data};
 use actix_web::{get, post, web, App, HttpResponse, HttpServer};
+
 use captcha::filters::{Dots, Noise, Wave};
 use captcha::Captcha;
-use dotenv::dotenv;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use chacha20poly1305::{
+    aead::{Aead, NewAead},
+    XChaCha20Poly1305,
+};
+
+#[macro_use]
+extern crate slog;
+use slog::Drain;
+use slog_bunyan;
+use slog_derive::KV;
 
 mod auth;
 mod error;
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, KV, Debug)]
 struct Config {
+    listening_interface: String,
+    listening_port: u16,
     jwt_secret: String,
     captcha_key: String,
     captcha_nonce: String,
@@ -167,17 +177,27 @@ async fn post_validate_handler(
 fn get_config() -> Config {
     dotenv().ok();
     match envy::prefixed("CJA_").from_env::<Config>() {
-        Ok(config) => {
-            println!("{:#?}", config);
-            config
-        }
+        Ok(config) => config,
         Err(error) => panic!("{:#?}", error),
     }
+}
+
+fn get_logger() -> slog::Logger {
+    slog::Logger::root(
+        Mutex::new(slog_bunyan::default(std::io::stderr())).fuse(),
+        o!("version" => "0.0.1"),
+    )
 }
 
 #[actix_web::main] // or #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let config = get_config();
+    let logger = get_logger();
+    debug!(logger, "Loaded Config"; &config);
+    info!(logger, "formatted: {}", 1; "log-key" => false);
+
+    let listening_interface = config.listening_interface.clone();
+    let listening_port = config.listening_port.clone();
     let state = Data::new(Arc::new(State { config }));
     HttpServer::new(move || {
         App::new()
@@ -186,7 +206,7 @@ async fn main() -> std::io::Result<()> {
             .service(post_session_handler)
             .service(post_validate_handler)
     })
-    .bind(("0.0.0.0", 3000))?
+    .bind((listening_interface, listening_port))?
     .run()
     .await
 }
