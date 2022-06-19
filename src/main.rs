@@ -216,7 +216,7 @@ fn get_logger() -> slog::Logger {
 async fn main() -> std::io::Result<()> {
     let config = get_config();
     let logger = get_logger();
-    debug!(logger, "Loaded Config"; &config);
+    info!(logger, "Loaded Config"; &config);
 
     let listening_interface = config.listening_interface.clone();
     let listening_port = config.listening_port.clone();
