@@ -23,7 +23,7 @@ A validation endpoint is also provided.
     ```
 7. Run `docker-compose up -d`
 8. Run `docker-compose logs -f`
-9. Open `http://localhost:3000` on your browser
+9. Open http://localhost:3000/captcha on your browser
 10. Look at the logs in the terminal where you run `docker-compose logs -f`, look `solution` and `sessionData` fields and replace them in the following command
 ```
 curl -vvv -X POST -H "Content-Type: application/json" -d "{\"sessionData\": \"$SESSION_DATA\", \"solution\": \"$SOLUTION\"}" http://localhost:3000/session
