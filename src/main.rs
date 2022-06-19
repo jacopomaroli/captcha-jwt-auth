@@ -184,7 +184,7 @@ fn get_config() -> Config {
 
 fn get_logger() -> slog::Logger {
     slog::Logger::root(
-        Mutex::new(slog_bunyan::default(std::io::stderr())).fuse(),
+        Mutex::new(slog_bunyan::default(std::io::stdout())).fuse(),
         o!("version" => "0.0.1"),
     )
 }
