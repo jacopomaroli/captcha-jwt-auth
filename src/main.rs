@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 // use std::iter::repeat;
-// use rand::{OsRng};
+// use rand::OsRng;
 
 use base64::{decode, encode};
 use generic_array::GenericArray;
@@ -9,9 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use dotenv::dotenv;
 
-use actix_web::http::StatusCode;
-use actix_web::web::{Bytes, Data};
-use actix_web::{get, post, web, App, HttpResponse, HttpServer};
+use actix_web::{
+    get,
+    http::StatusCode,
+    post, web,
+    web::{Bytes, Data},
+    App, HttpMessage, HttpRequest, HttpResponse, HttpServer,
+};
 
 use captcha::filters::{Dots, Noise, Wave};
 use captcha::Captcha;
@@ -29,6 +33,8 @@ use slog_derive::KV;
 
 mod auth;
 mod error;
+mod logger_middleware;
+mod request_id_middleware;
 
 #[derive(Serialize, Deserialize, KV, Debug)]
 struct Config {
@@ -41,6 +47,7 @@ struct Config {
 
 struct State {
     config: Config,
+    logger: slog::Logger,
 }
 
 #[derive(Deserialize)]
@@ -67,7 +74,13 @@ struct PostValidateReq {
 }
 
 #[get("/captcha")]
-async fn get_captcha_handler(state: Data<Arc<State>>) -> Result<HttpResponse, error::CJAError> {
+async fn get_captcha_handler(
+    req: HttpRequest,
+    state: Data<Arc<State>>,
+) -> Result<HttpResponse, error::CJAError> {
+    let req_extensions = req.extensions();
+    let req_logger = req_extensions.get::<slog::Logger>().unwrap();
+
     let captcha_data = Captcha::new()
         .add_chars(5)
         .apply_filter(Noise::new(0.4))
@@ -76,8 +89,10 @@ async fn get_captcha_handler(state: Data<Arc<State>>) -> Result<HttpResponse, er
         .view(220, 120)
         .apply_filter(Dots::new(15))
         .as_tuple();
+
     let (solution, png) = captcha_data.unwrap();
-    println!("solution: {}", solution);
+    // let req_logger = state.logger.new(o!("key" => "value"));
+    debug!(req_logger, "solution: {}", solution);
     let data = Bytes::from(png);
 
     // let mut gen = OsRng::new().expect("Failed to get OS random generator");
@@ -109,7 +124,7 @@ async fn get_captcha_handler(state: Data<Arc<State>>) -> Result<HttpResponse, er
 
     let encrypted_data = cipher.encrypt(&GenericArray::clone_from_slice(&nonce), secret.as_ref());
     let encrypted_data_b64 = encode(&encrypted_data.unwrap());
-    println!("encrypted data {}", &encrypted_data_b64);
+    debug!(req_logger, "solution: {}", &encrypted_data_b64);
 
     Ok(HttpResponse::build(StatusCode::OK)
         .append_header(("data", encrypted_data_b64))
@@ -119,9 +134,13 @@ async fn get_captcha_handler(state: Data<Arc<State>>) -> Result<HttpResponse, er
 
 #[post("/session")]
 async fn post_session_handler(
+    req: HttpRequest,
     state: Data<Arc<State>>,
     post_session_req: web::Json<PostSessionReq>,
 ) -> Result<HttpResponse, error::CJAError> {
+    let req_extensions = req.extensions();
+    let req_logger = req_extensions.get::<slog::Logger>().unwrap();
+
     let key = decode(&state.config.captcha_key).unwrap();
     let nonce = decode(&state.config.captcha_nonce).unwrap();
     let cipher = XChaCha20Poly1305::new(&GenericArray::clone_from_slice(&key));
@@ -132,7 +151,7 @@ async fn post_session_handler(
         encrypted_data_2.unwrap().as_ref(),
     );
     let session_data_str = String::from_utf8(decrypted_data.unwrap()).unwrap();
-    println!("decrypted data {}", session_data_str);
+    debug!(req_logger, "decrypted data: {}", &session_data_str);
     let session_data = serde_json::from_str::<CaptchaSessionData>(&session_data_str).unwrap();
 
     if post_session_req.solution != session_data.solution {
@@ -161,9 +180,13 @@ async fn post_session_handler(
 
 #[post("/validate")]
 async fn post_validate_handler(
+    req: HttpRequest,
     state: Data<Arc<State>>,
     post_validate_req: web::Json<PostValidateReq>,
 ) -> Result<HttpResponse, error::CJAError> {
+    let req_extensions = req.extensions();
+    let _req_logger = req_extensions.get::<slog::Logger>().unwrap();
+
     let jwt_secret: &[u8] = &state.config.jwt_secret.as_bytes();
     let token_data = auth::validate(jwt_secret, &post_validate_req.jwt).map_err(|e| return e)?;
 
@@ -194,14 +217,15 @@ async fn main() -> std::io::Result<()> {
     let config = get_config();
     let logger = get_logger();
     debug!(logger, "Loaded Config"; &config);
-    info!(logger, "formatted: {}", 1; "log-key" => false);
 
     let listening_interface = config.listening_interface.clone();
     let listening_port = config.listening_port.clone();
-    let state = Data::new(Arc::new(State { config }));
+    let state = Data::new(Arc::new(State { config, logger }));
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            .wrap(logger_middleware::ReqLoggerWrapper)
+            .wrap(request_id_middleware::RequestIdWrapper)
             .service(get_captcha_handler)
             .service(post_session_handler)
             .service(post_validate_handler)
