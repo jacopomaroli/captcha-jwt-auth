@@ -30,7 +30,7 @@ curl -vvv -X POST -H "Content-Type: application/json" -d "{\"sessionData\": \"$S
 ```
 11. get the JWT from the previous point and replace it in the following request to validate it
 ```
-curl -vvv -X POST -H "Content-Type: application/json" -d "{\"jwt\": \"$JWT\"}" http://localhost:3000/validate
+curl -vvv -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $JWT" http://localhost:3000/validate
 ```
 
 # why ChaCha20?
