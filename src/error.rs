@@ -13,8 +13,14 @@ pub enum CJAError {
     CaptchaInvalid,
     #[error("Signature expired")]
     JWTExpired,
+    #[error("no auth header")]
+    NoAuthHeader,
+    #[error("invalid auth header")]
+    InvalidAuthHeader,
     #[error("Invalid token")]
     Forbidden,
+    #[error("Invalid payload")]
+    InvalidPayload,
     #[error("Internal server error")]
     Unknown,
 }
@@ -33,7 +39,10 @@ impl CJAError {
             Self::CaptchaExpired => "CaptchaExpired".to_string(),
             Self::CaptchaInvalid => "CaptchaInvalid".to_string(),
             Self::JWTExpired => "JWTExpired".to_string(),
+            Self::NoAuthHeader => "NoAuthHeader".to_string(),
+            Self::InvalidAuthHeader => "InvalidAuthHeader".to_string(),
             Self::Forbidden => "Forbidden".to_string(),
+            Self::InvalidPayload => "InvalidPayload".to_string(),
             Self::Unknown => "Unknown".to_string(),
         }
     }
@@ -45,8 +54,11 @@ impl ResponseError for CJAError {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::CaptchaExpired => StatusCode::FORBIDDEN,
             Self::CaptchaInvalid => StatusCode::FORBIDDEN,
-            Self::Forbidden => StatusCode::FORBIDDEN,
             Self::JWTExpired => StatusCode::FORBIDDEN,
+            Self::NoAuthHeader => StatusCode::FORBIDDEN,
+            Self::InvalidAuthHeader => StatusCode::FORBIDDEN,
+            Self::Forbidden => StatusCode::FORBIDDEN,
+            Self::InvalidPayload => StatusCode::BAD_REQUEST,
             Self::Unknown => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

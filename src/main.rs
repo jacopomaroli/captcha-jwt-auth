@@ -11,7 +11,10 @@ use dotenv::dotenv;
 
 use actix_web::{
     get,
-    http::StatusCode,
+    http::{
+        header::{HeaderMap, AUTHORIZATION},
+        StatusCode,
+    },
     post, web,
     web::{Bytes, Data},
     App, HttpMessage, HttpRequest, HttpResponse, HttpServer,
@@ -35,6 +38,8 @@ mod auth;
 mod error;
 mod logger_middleware;
 mod request_id_middleware;
+
+use crate::error::CJAError;
 
 #[derive(Serialize, Deserialize, KV, Debug)]
 struct Config {
@@ -66,11 +71,6 @@ struct PostSessionRes {
 struct CaptchaSessionData {
     exp: u64,
     solution: String,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PostValidateReq {
-    jwt: String,
 }
 
 #[get("/captcha")]
@@ -182,19 +182,36 @@ async fn post_session_handler(
 async fn post_validate_handler(
     req: HttpRequest,
     state: Data<Arc<State>>,
-    post_validate_req: web::Json<PostValidateReq>,
 ) -> Result<HttpResponse, error::CJAError> {
     let req_extensions = req.extensions();
     let _req_logger = req_extensions.get::<slog::Logger>().unwrap();
 
     let jwt_secret: &[u8] = &state.config.jwt_secret.as_bytes();
-    let token_data = auth::validate(jwt_secret, &post_validate_req.jwt).map_err(|e| return e)?;
+    let jwt = jwt_from_header(req.headers()).map_err(|e| return e)?;
+    let token_data = auth::validate(jwt_secret, &jwt).map_err(|e| return e)?;
 
     let body = serde_json::to_string(&token_data.claims).unwrap();
 
     Ok(HttpResponse::Ok()
         .content_type("application/json")
         .body(body))
+}
+
+const BEARER: &str = "Bearer ";
+
+fn jwt_from_header(headers: &HeaderMap) -> Result<String, error::CJAError> {
+    let header = match headers.get(AUTHORIZATION) {
+        Some(v) => v,
+        None => return Err(CJAError::NoAuthHeader),
+    };
+    let auth_header = match std::str::from_utf8(header.as_bytes()) {
+        Ok(v) => v,
+        Err(_) => return Err(CJAError::NoAuthHeader),
+    };
+    if !auth_header.starts_with(BEARER) {
+        return Err(CJAError::InvalidAuthHeader);
+    }
+    Ok(auth_header.trim_start_matches(BEARER).to_owned())
 }
 
 fn get_config() -> Config {
@@ -212,6 +229,19 @@ fn get_logger() -> slog::Logger {
     )
 }
 
+fn get_json_extractor_config(state: Arc<State>) -> web::JsonConfig {
+    web::JsonConfig::default()
+        .limit(4096)
+        // .content_type(|mime| {
+        //     // accept text/plain content type
+        //     mime.type_() == mime::TEXT && mime.subtype() == mime::PLAIN
+        // })
+        .error_handler(move |err, _req| {
+            debug!(state.logger, "{}", &err);
+            CJAError::InvalidPayload.into()
+        })
+}
+
 #[actix_web::main] // or #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let config = get_config();
@@ -220,10 +250,12 @@ async fn main() -> std::io::Result<()> {
 
     let listening_interface = config.listening_interface.clone();
     let listening_port = config.listening_port.clone();
-    let state = Data::new(Arc::new(State { config, logger }));
+    let state = Arc::new(State { config, logger });
+    let json_extractor_config = get_json_extractor_config(state.clone());
     HttpServer::new(move || {
         App::new()
-            .app_data(state.clone())
+            .app_data(Data::new(state.clone()).clone())
+            .app_data(json_extractor_config.clone())
             .wrap(logger_middleware::ReqLoggerWrapper)
             .wrap(request_id_middleware::RequestIdWrapper)
             .service(get_captcha_handler)
