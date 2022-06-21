@@ -30,9 +30,12 @@ use chacha20poly1305::{
 
 #[macro_use]
 extern crate slog;
-use slog::Drain;
+extern crate erased_serde;
+extern crate serde;
+extern crate slog_derive;
+use slog::{Drain, Key, Record, Serializer, Value};
 use slog_bunyan;
-use slog_derive::KV;
+use slog_derive::{SerdeValue, KV};
 
 mod auth;
 mod error;
@@ -40,14 +43,30 @@ mod logger_middleware;
 mod request_id_middleware;
 
 use crate::error::CJAError;
+use crate::slog::SerdeValue;
 
-#[derive(Serialize, Deserialize, KV, Debug)]
+#[derive(Serialize, Deserialize, Clone, KV, SerdeValue, Debug)]
+#[slog(no_value_impl)]
 struct Config {
     listening_interface: String,
     listening_port: u16,
     jwt_secret: String,
     captcha_key: String,
     captcha_nonce: String,
+}
+
+#[derive(Clone, SerdeValue, Serialize)]
+struct MyString(String);
+
+impl Value for Config {
+    // TODO: this doesn't work
+    fn serialize(&self, _record: &Record, key: Key, ser: &mut dyn Serializer) -> slog::Result {
+        let my_string: &dyn SerdeValue = &MyString("***".into());
+        if key.eq("jwt_secret") {
+            return ser.emit_serde(&key, my_string);
+        }
+        ser.emit_serde(&key, self)
+    }
 }
 
 struct State {

@@ -1,14 +1,14 @@
 # Captcha JWT Auth
-This service allows you to generate a captcha and provides a jwt after solving it.  
-A validation endpoint is also provided.
+This service generates a captcha and returns a JWT after solving it.  
+A JWT validation endpoint is also provided.
 
 # Quickstart
 1. `mkdir captcha-jwt-auth`
 2. `cd captcha-jwt-auth`
 3. `wget https://github.com/jacopomaroli/captcha-jwt-auth/raw/master/docker-compose.yml`
 4. `wget https://github.com/jacopomaroli/captcha-jwt-auth/raw/master/env.example`
-5. copy .env.example to .env
-6. generate the corresponding keys and replace the values in the .env file using the following
+5. copy `.env.example` to `.env`
+6. generate the corresponding keys and replace the values in the `.env` file using the following
     CJA_CAPTCHA_KEY
     ```
     openssl rand 32 | base64 -w 0
@@ -33,7 +33,7 @@ curl -vvv -X POST -H "Content-Type: application/json" -d "{\"sessionData\": \"$S
 curl -vvv -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $JWT" http://localhost:3000/validate
 ```
 
-# why ChaCha20?
+# Why ChaCha20?
 from https://crypto.stackexchange.com/questions/34455/whats-the-appeal-of-using-chacha20-instead-of-aes
 ```
 I believe there are three main reasons why ChaCha20 is sometimes preferred to AES.
@@ -52,6 +52,11 @@ Dedicated instructions on high-end CPUs
 Amount of received cryptanalysis
 Availability of studies on side-channel (other than cache timing) protections
 ```
+
+# Improvements
+- obfuscating secrets rather than printing them on startup when dumping the config
+- dynamic log level from runtime config rather than compile time config
+- writing logs both on files and stdout
 
 # References, shoutouts, and things that helped developing the project
 - https://github.com/zupzup/rust-jwt-example
