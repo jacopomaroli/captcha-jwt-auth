@@ -10,7 +10,10 @@ build:
 	cargo build --release --verbose
 
 docker-build:
-	docker build -t captcha-jwt-auth:${BRANCH} .
+	docker build -t jacopomaroli/captcha-jwt-auth:${BRANCH} .
+
+docker-push:
+	docker push jacopomaroli/captcha-jwt-auth:${BRANCH}
 
 run-release:
 	./target/release/captcha-jwt-auth

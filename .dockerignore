@@ -3,3 +3,5 @@
 .env.example
 Makefile
 README.md
+docker-compose.yml
+Dockerfile

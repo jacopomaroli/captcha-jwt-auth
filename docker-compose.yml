@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   captcha-jwt-auth:
-    image: "captcha-jwt-auth:master"
+    image: "jacopomaroli/captcha-jwt-auth:master"
     container_name: captcha-jwt-auth
     volumes:
       - ./log:/app/log
