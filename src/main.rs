@@ -74,6 +74,11 @@ struct State {
     logger: slog::Logger,
 }
 
+#[derive(Serialize, Deserialize)]
+struct GetPingRes {
+    version: String,
+}
+
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 struct PostSessionReq {
@@ -90,6 +95,18 @@ struct PostSessionRes {
 struct CaptchaSessionData {
     exp: u64,
     solution: String,
+}
+
+#[get("/ping")]
+async fn get_ping_handler() -> Result<HttpResponse, error::CJAError> {
+    let body = serde_json::to_string(&GetPingRes {
+        version: "1.0.0".to_string(),
+    })
+    .unwrap();
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/json")
+        .body(body))
 }
 
 #[get("/captcha")]
@@ -197,8 +214,8 @@ async fn post_session_handler(
         .body(body))
 }
 
-#[post("/validate")]
-async fn post_validate_handler(
+#[get("/validate")]
+async fn get_validate_handler(
     req: HttpRequest,
     state: Data<Arc<State>>,
 ) -> Result<HttpResponse, error::CJAError> {
@@ -277,9 +294,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(json_extractor_config.clone())
             .wrap(logger_middleware::ReqLoggerWrapper)
             .wrap(request_id_middleware::RequestIdWrapper)
+            .service(get_ping_handler)
             .service(get_captcha_handler)
             .service(post_session_handler)
-            .service(post_validate_handler)
+            .service(get_validate_handler)
     })
     .bind((listening_interface, listening_port))?
     .run()
